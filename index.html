@@ -1,0 +1,345 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GeoLocate Dashboard</title>
+<style>
+* { box-sizing: border-box; }
+body {
+  margin: 0; font-family: Arial, sans-serif;
+  background: #f1f5f9; color: #172033;
+}
+header {
+  background: #14233b; color: white;
+  padding: 22px 5%;
+}
+header h1 { margin: 0 0 6px; font-size: 25px; }
+header p { margin: 0; color: #bdcbe0; }
+main { max-width: 1200px; margin: auto; padding: 24px; }
+.cards {
+  display: grid; grid-template-columns: repeat(3, 1fr);
+  gap: 16px; margin-bottom: 22px;
+}
+.card, .panel {
+  background: white; padding: 20px;
+  border-radius: 12px; border: 1px solid #e0e7ef;
+}
+.card small { color: #68758a; }
+.card h2 { font-size: 30px; margin: 12px 0 0; }
+.panel { margin-bottom: 20px; }
+h3 { margin-top: 0; }
+p { line-height: 1.5; }
+button, .button {
+  display: inline-block; border: 0; border-radius: 7px;
+  padding: 11px 15px; background: #2563eb;
+  color: white; font-weight: bold; cursor: pointer;
+  text-decoration: none; font-size: 14px;
+}
+button:disabled { opacity: .6; cursor: wait; }
+.secondary { background: #e6edf7; color: #172033; }
+.danger { background: #b42318; }
+.notice {
+  background: #eff6ff; padding: 12px;
+  border-radius: 8px; color: #244b86; font-size: 14px;
+}
+#status { min-height: 22px; overflow-wrap: anywhere; }
+.table-wrap { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; min-width: 720px; }
+th, td {
+  padding: 13px 10px; text-align: left;
+  border-bottom: 1px solid #e7edf4; font-size: 13px;
+}
+th { background: #f8fafc; color: #526077; }
+td a { color: #1d4ed8; }
+.actions { display: flex; gap: 7px; }
+.actions button { padding: 7px 9px; }
+.empty { color: #718096; text-align: center; padding: 25px; }
+footer { text-align: center; color: #718096; padding: 20px; font-size: 12px; }
+@media(max-width: 700px) {
+  .cards { grid-template-columns: 1fr; }
+  main { padding: 14px; }
+}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>📍 GeoLocate</h1>
+  <p>Location collection and monitoring dashboard</p>
+</header>
+
+<main>
+  <div class="cards">
+    <div class="card">
+      <small>Total saved entries</small>
+      <h2 id="total">0</h2>
+    </div>
+    <div class="card">
+      <small>Latest recorded location</small>
+      <p id="latest">No entries yet</p>
+    </div>
+    <div class="card">
+      <small>Storage capacity</small>
+      <h2>100</h2>
+      <small>Entries on this browser</small>
+    </div>
+  </div>
+
+  <section class="panel">
+    <h3>Record a location</h3>
+    <p class="notice">
+      This demonstration requests the device user's permission.
+      Coordinates are saved in this browser only and are not
+      transmitted to a server.
+    </p>
+    <button id="capture">Share and save my location</button>
+    <p id="status" role="status" aria-live="polite">
+      Ready to record a location.
+    </p>
+  </section>
+
+  <section class="panel">
+    <h3>Location history</h3>
+    <p>Saved entries remain available after a page refresh
+       in this browser, subject to browser storage settings.</p>
+
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>Date and time</th>
+            <th>Latitude</th>
+            <th>Longitude</th>
+            <th>Accuracy</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody id="entries"></tbody>
+      </table>
+    </div>
+
+    <p id="empty" class="empty">No location entries saved yet.</p>
+    <button id="export" class="secondary">Export CSV</button>
+    <button id="clear" class="danger">Delete all entries</button>
+  </section>
+</main>
+
+<footer>
+  GeoLocate academic project · Consent-based location capture
+</footer>
+
+<script>
+const STORAGE_KEY = "geolocate_entries_v1";
+const MAX_ENTRIES = 100;
+
+const totalEl = document.getElementById("total");
+const latestEl = document.getElementById("latest");
+const entriesEl = document.getElementById("entries");
+const emptyEl = document.getElementById("empty");
+const statusEl = document.getElementById("status");
+const captureBtn = document.getElementById("capture");
+
+function loadEntries() {
+  try {
+    const value = JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]");
+    return Array.isArray(value) ? value : [];
+  } catch {
+    return [];
+  }
+}
+
+let entries = loadEntries();
+
+function saveEntries() {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(entries));
+    return true;
+  } catch {
+    statusEl.textContent =
+      "Storage failed. Check browser storage settings.";
+    return false;
+  }
+}
+
+function safeText(tag, value) {
+  const el = document.createElement(tag);
+  el.textContent = value;
+  return el;
+}
+
+function render() {
+  totalEl.textContent = entries.length;
+  latestEl.textContent = entries.length
+    ? new Date(entries[0].time).toLocaleString()
+    : "No entries yet";
+
+  entriesEl.replaceChildren();
+  emptyEl.hidden = entries.length > 0;
+
+  entries.forEach((entry, index) => {
+    const tr = document.createElement("tr");
+    const values = [
+      entries.length - index,
+      new Date(entry.time).toLocaleString(),
+      Number(entry.lat).toFixed(7),
+      Number(entry.lon).toFixed(7),
+      "± " + Math.round(entry.accuracy) + " m"
+    ];
+
+    values.forEach(value => {
+      const td = document.createElement("td");
+      td.textContent = value;
+      tr.appendChild(td);
+    });
+
+    const actions = document.createElement("td");
+    const group = document.createElement("div");
+    group.className = "actions";
+
+    const map = document.createElement("a");
+    map.className = "button";
+    map.textContent = "Map";
+    map.target = "_blank";
+    map.rel = "noopener noreferrer";
+    map.href = "https://www.google.com/maps?q=" +
+      encodeURIComponent(entry.lat + "," + entry.lon);
+
+    const remove = document.createElement("button");
+    remove.className = "danger";
+    remove.textContent = "Delete";
+    remove.addEventListener("click", () => {
+      if (!confirm("Delete this saved entry?")) return;
+      const oldEntries = entries;
+      entries = entries.filter(item => item.id !== entry.id);
+      if (saveEntries()) {
+        render();
+        statusEl.textContent = "Entry deleted.";
+      } else {
+        entries = oldEntries;
+      }
+    });
+
+    group.append(map, remove);
+    actions.appendChild(group);
+    tr.appendChild(actions);
+    entriesEl.appendChild(tr);
+  });
+}
+
+captureBtn.addEventListener("click", () => {
+  if (!navigator.geolocation) {
+    statusEl.textContent = "Geolocation is not supported.";
+    return;
+  }
+
+  if (!window.isSecureContext) {
+    statusEl.textContent =
+      "Use HTTPS or localhost to access device location.";
+    return;
+  }
+
+  if (entries.length >= MAX_ENTRIES) {
+    statusEl.textContent =
+      "Storage is full. Export or delete entries first.";
+    return;
+  }
+
+  captureBtn.disabled = true;
+  statusEl.textContent =
+    "Requesting location permission and waiting for position...";
+
+  navigator.geolocation.getCurrentPosition(position => {
+    const coords = position.coords;
+
+    const entry = {
+      id: crypto.randomUUID
+        ? crypto.randomUUID()
+        : String(Date.now()) + Math.random(),
+      time: new Date(position.timestamp).toISOString(),
+      lat: coords.latitude,
+      lon: coords.longitude,
+      accuracy: coords.accuracy
+    };
+
+    entries.unshift(entry);
+
+    if (saveEntries()) {
+      render();
+      statusEl.textContent =
+        "Location saved successfully. Total entries: " +
+        entries.length;
+    } else {
+      entries.shift();
+    }
+
+    captureBtn.disabled = false;
+  }, error => {
+    const messages = {
+      1: "Permission denied. Allow location access in browser settings.",
+      2: "Location unavailable. Check device location services.",
+      3: "Timed out. Please try again."
+    };
+
+    statusEl.textContent =
+      messages[error.code] || "Could not obtain location.";
+    captureBtn.disabled = false;
+  }, {
+    enableHighAccuracy: true,
+    timeout: 20000,
+    maximumAge: 0
+  });
+});
+
+document.getElementById("export").addEventListener("click", () => {
+  if (!entries.length) {
+    statusEl.textContent = "There are no entries to export.";
+    return;
+  }
+
+  const columns = ["Date and time", "Latitude", "Longitude", "Accuracy"];
+  const rows = entries.map(entry => [
+    entry.time, entry.lat, entry.lon, entry.accuracy
+  ]);
+
+  const csvCell = value =>
+    '"' + String(value).replace(/"/g, '""') + '"';
+
+  const csv = [columns, ...rows]
+    .map(row => row.map(csvCell).join(","))
+    .join("\r\n");
+
+  const blob = new Blob(["\uFEFF" + csv], {
+    type: "text/csv;charset=utf-8;"
+  });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = "geolocate-history.csv";
+  link.click();
+  URL.revokeObjectURL(url);
+});
+
+document.getElementById("clear").addEventListener("click", () => {
+  if (!confirm("Permanently delete all saved entries in this browser?")) {
+    return;
+  }
+
+  const oldEntries = entries;
+  entries = [];
+
+  if (saveEntries()) {
+    render();
+    statusEl.textContent = "All local entries deleted.";
+  } else {
+    entries = oldEntries;
+    render();
+  }
+});
+
+render();
+</script>
+</body>
+</html>
